@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import './App.css'   // ⚠️ 이 줄 지우면 App.css 무시 (Day 1의 그 버그)
 
 function App() {
-  const API_URL = "https://team-00-back.onrender.com";
+  const API_URL = "http://localhost:3000";
   
   // 방명록 목록 (서버에서 받아와 채움)
   const [messages, setMessages] = useState([])
