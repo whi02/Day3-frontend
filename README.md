@@ -1,16 +1,37 @@
-# React + Vite
+# Guestbook Front Starter
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+## Setup
 
-Currently, two official plugins are available:
+1. Node.js 설치
+   - Node.js 18 이상 버전을 사용하세요.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+2. 프로젝트 의존성 설치
 
-## React Compiler
+```bash
+npm install
+```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+3. 개발 서버 실행
 
-## Expanding the ESLint configuration
+```bash
+npm run dev
+```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+4. 빌드
+
+```bash
+npm run build
+```
+
+5. 빌드 결과 미리보기
+
+```bash
+npm run preview
+```
+
+## 주요 명령어
+
+- `npm run dev` — 개발 서버 실행
+- `npm run build` — 프로덕션 빌드 생성
+- `npm run preview` — 빌드된 결과 미리보기
+- `npm run lint` — ESLint 검사
