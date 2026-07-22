@@ -128,6 +128,23 @@ function notePayload(form, extras = {}) {
   }
 }
 
+function CorkPattern() {
+  return (
+    <div className="cork-pattern" aria-hidden="true">
+      {Array.from({ length: 16 }, (_, index) => {
+        const row = Math.floor(index / 4)
+        const column = index % 4
+        const className = [
+          'cork-tile',
+          column % 2 ? 'cork-flip-x' : '',
+          row % 2 ? 'cork-flip-y' : '',
+        ].filter(Boolean).join(' ')
+        return <span className={className} key={index} />
+      })}
+    </div>
+  )
+}
+
 function NoteCard({
   note,
   replies,
@@ -1019,6 +1036,7 @@ function App() {
           <div className="wall-toolbar"><span>{activeSlug.replace('-', '.')} CORK BOARD</span><span className="scroll-tip">보드를 드래그하거나 스크롤해 둘러보세요</span></div>
           <div className="wall-scroll">
             <div className="wall" style={{ width: WALL.width, height: WALL.height }}>
+              <CorkPattern />
               {writable ? (
                 <AddNoteCard
                   disabled={saving || Boolean(draft) || Boolean(moving)}
