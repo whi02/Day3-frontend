@@ -93,17 +93,24 @@ function formatDate(value) {
   }).format(new Date(value))
 }
 
+function notesOverlap(candidate, root, gap = 0) {
+  return (
+    candidate.x < root.x + NOTE.width + gap
+    && candidate.x + NOTE.width + gap > root.x
+    && candidate.y < root.y + NOTE.height + gap
+    && candidate.y + NOTE.height + gap > root.y
+  )
+}
+
+function findProtectedOverlap(candidate, roots, ignoredId = null) {
+  return roots.find((root) => root.id !== ignoredId && !root.is_mine && notesOverlap(candidate, root)) || null
+}
+
 function findOpenPosition(roots) {
   const occupied = [ADD_NOTE_SLOT, ...roots]
-  const overlaps = (candidate, root) => (
-    candidate.x < root.x + NOTE.width + 12
-    && candidate.x + NOTE.width + 12 > root.x
-    && candidate.y < root.y + NOTE.height + 12
-    && candidate.y + NOTE.height + 12 > root.y
-  )
   for (let y = 36; y <= WALL.height - NOTE.height; y += 220) {
     for (let x = 36; x <= WALL.width - NOTE.width; x += 220) {
-      if (!occupied.some((root) => overlaps({ x, y }, root))) return { x, y }
+      if (!occupied.some((root) => notesOverlap({ x, y }, root, 12))) return { x, y }
     }
   }
   return { x: 36, y: 36 }
@@ -121,12 +128,30 @@ function notePayload(form, extras = {}) {
   }
 }
 
+function CorkPattern() {
+  return (
+    <div className="cork-pattern" aria-hidden="true">
+      {Array.from({ length: 16 }, (_, index) => {
+        const row = Math.floor(index / 4)
+        const column = index % 4
+        const className = [
+          'cork-tile',
+          column % 2 ? 'cork-flip-x' : '',
+          row % 2 ? 'cork-flip-y' : '',
+        ].filter(Boolean).join(' ')
+        return <span className={className} key={index} />
+      })}
+    </div>
+  )
+}
+
 function NoteCard({
   note,
   replies,
   writable,
   moving,
   dragging,
+  blocked,
   onPointerDown,
   onPointerMove,
   onPointerUp,
@@ -197,7 +222,7 @@ function NoteCard({
 
   return (
     <div
-      className={`note-shell ${moving ? 'is-moving' : ''} ${dragging ? 'is-dragging' : ''}`}
+      className={`note-shell ${moving ? 'is-moving' : ''} ${dragging ? 'is-dragging' : ''} ${blocked ? 'is-blocked' : ''}`}
       style={{ left: note.x, top: note.y, zIndex: Math.min(Number(note.z) || 1, 2_000_000_000) }}
       onPointerDown={moving ? onPointerDown : undefined}
       onPointerMove={(event) => moving ? onPointerMove?.(event) : animateHover(event)}
@@ -208,6 +233,7 @@ function NoteCard({
       data-moving-id={moving ? note.id : undefined}
       onKeyDown={moving ? onKeyDown : undefined}
       aria-label={moving ? '화살표 키로 포스트잇 위치 이동' : undefined}
+      aria-invalid={blocked || undefined}
     >
       <div ref={motionRef} className="note-motion">
         {replies.map((reply, index) => (
@@ -248,7 +274,7 @@ function NoteCard({
           {moving ? (
             <span className="owner-actions">
               <button type="button" className="mini-button" onClick={onCancelMove} disabled={pending}>취소</button>
-              <button type="button" className="mini-button primary" onClick={onConfirmMove} disabled={pending}>위치 확정</button>
+              <button type="button" className="mini-button primary" onClick={onConfirmMove} disabled={pending || blocked} title={blocked ? '다른 사람의 방명록과 겹치지 않는 위치로 옮겨주세요' : undefined}>위치 확정</button>
             </span>
           ) : writable && note.is_mine ? (
             <span className="owner-actions">
@@ -264,10 +290,10 @@ function NoteCard({
   )
 }
 
-function DraftNote({ draft, dragging, saving, onPointerDown, onPointerMove, onPointerUp, onConfirm, onCancel, onKeyDown }) {
+function DraftNote({ draft, dragging, blocked, saving, onPointerDown, onPointerMove, onPointerUp, onConfirm, onCancel, onKeyDown }) {
   return (
     <div
-      className={`note-shell draft-shell is-moving ${dragging ? 'is-dragging' : ''}`}
+      className={`note-shell draft-shell is-moving ${dragging ? 'is-dragging' : ''} ${blocked ? 'is-blocked' : ''}`}
       style={{ left: draft.x, top: draft.y, zIndex: 2_000_000_001 }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
@@ -276,6 +302,7 @@ function DraftNote({ draft, dragging, saving, onPointerDown, onPointerMove, onPo
       tabIndex="0"
       onKeyDown={onKeyDown}
       aria-label="화살표 키로 새 포스트잇 위치 이동"
+      aria-invalid={blocked || undefined}
     >
       <article className={`note-card note-${draft.color}`} style={{ '--rotation': '0deg' }}>
         <span className="draft-label">새 포스트잇</span>
@@ -288,7 +315,7 @@ function DraftNote({ draft, dragging, saving, onPointerDown, onPointerMove, onPo
         <div className="stack-chips">{parseStack(draft.stackText).slice(0, 2).map((item) => <span key={item}>#{item}</span>)}</div>
         <footer className="note-actions draft-actions">
           <button type="button" className="mini-button" onClick={onCancel}>취소</button>
-          <button type="button" className="mini-button primary" onClick={onConfirm} disabled={saving}>
+          <button type="button" className="mini-button primary" onClick={onConfirm} disabled={saving || blocked} title={blocked ? '다른 사람의 방명록과 겹치지 않는 위치로 옮겨주세요' : undefined}>
             {saving ? '붙이는 중…' : '이 위치에 붙이기'}
           </button>
         </footer>
@@ -621,7 +648,7 @@ function App() {
   const [waking, setWaking] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const [toast, setToast] = useState('')
+  const [toast, setToast] = useState(null)
   const pollBusy = useRef(false)
   const mutationBusy = useRef(false)
   const notesRequestId = useRef(0)
@@ -642,11 +669,17 @@ function App() {
   }, [notes])
   const selectedRoot = roots.find((root) => root.id === selectedRootId) || null
   const selectedReplies = selectedRoot ? repliesByRoot.get(selectedRoot.id) || [] : []
+  const protectedOverlap = useMemo(() => {
+    const candidate = draft || moving
+    if (!candidate) return null
+    return findProtectedOverlap(candidate, roots, moving?.id ?? null)
+  }, [draft, moving, roots])
+  const placementBlocked = Boolean(protectedOverlap)
 
-  const showToast = useCallback((message) => {
-    setToast(message)
+  const showToast = useCallback((message, tone = 'default') => {
+    setToast({ message, tone })
     window.clearTimeout(toastTimer.current)
-    toastTimer.current = window.setTimeout(() => setToast(''), 2800)
+    toastTimer.current = window.setTimeout(() => setToast(null), 2800)
   }, [])
 
   const beginMutation = useCallback(() => {
@@ -753,6 +786,10 @@ function App() {
 
   const saveRoot = async ({ automatic = false } = {}) => {
     if (!activeSlug || (!automatic && !draft)) return false
+    if (!automatic && findProtectedOverlap(draft, roots)) {
+      showToast('다른 사람의 방명록은 가릴 수 없어요!', 'warning')
+      return false
+    }
     const source = draft || form
     const validationError = validateNoteForm(source)
     if (validationError) {
@@ -804,7 +841,18 @@ function App() {
   }
 
   const endDrag = (event) => {
-    if (drag && event.pointerId === drag.pointerId) setDrag(null)
+    if (!drag || event.pointerId !== drag.pointerId) return
+    const next = {
+      x: clamp(Math.round(drag.startX + event.clientX - drag.startClientX), 0, WALL.width - NOTE.width),
+      y: clamp(Math.round(drag.startY + event.clientY - drag.startClientY), 0, WALL.height - NOTE.height),
+    }
+    if (drag.target === 'draft') setDraft((current) => ({ ...current, ...next }))
+    else setMoving((current) => ({ ...current, ...next }))
+    const ignoredId = drag.target === 'moving' ? moving?.id : null
+    if (findProtectedOverlap(next, roots, ignoredId)) {
+      showToast('다른 사람의 방명록은 가릴 수 없어요!', 'warning')
+    }
+    setDrag(null)
   }
 
   const nudgePosition = (event, target) => {
@@ -835,7 +883,12 @@ function App() {
   }
 
   const confirmMove = async () => {
-    if (!moving || !beginMutation()) return
+    if (!moving) return
+    if (findProtectedOverlap(moving, roots, moving.id)) {
+      showToast('다른 사람의 방명록은 가릴 수 없어요!', 'warning')
+      return
+    }
+    if (!beginMutation()) return
     try {
       const updated = await request(`/notes/${moving.id}/position`, {
         method: 'PATCH',
@@ -983,6 +1036,7 @@ function App() {
           <div className="wall-toolbar"><span>{activeSlug.replace('-', '.')} CORK BOARD</span><span className="scroll-tip">보드를 드래그하거나 스크롤해 둘러보세요</span></div>
           <div className="wall-scroll">
             <div className="wall" style={{ width: WALL.width, height: WALL.height }}>
+              <CorkPattern />
               {writable ? (
                 <AddNoteCard
                   disabled={saving || Boolean(draft) || Boolean(moving)}
@@ -996,9 +1050,9 @@ function App() {
               {filteredRoots.map((root) => {
                 const replies = repliesByRoot.get(root.id) || []
                 const shown = moving?.id === root.id ? { ...root, ...moving } : root
-                return <NoteCard key={root.id} note={shown} replies={replies} writable={writable} moving={moving?.id === root.id} dragging={drag?.target === 'moving' && moving?.id === root.id} onPointerDown={(event) => beginDrag(event, 'moving')} onPointerMove={moveDrag} onPointerUp={endDrag} onKeyDown={(event) => nudgePosition(event, 'moving')} pending={saving} onThread={() => setSelectedRootId(root.id)} onMove={() => startMove(root)} onConfirmMove={confirmMove} onCancelMove={() => setMoving(null)} onEdit={() => setEditingNote(root)} onDelete={() => deleteNote(root)} />
+                return <NoteCard key={root.id} note={shown} replies={replies} writable={writable} moving={moving?.id === root.id} dragging={drag?.target === 'moving' && moving?.id === root.id} blocked={moving?.id === root.id && placementBlocked} onPointerDown={(event) => beginDrag(event, 'moving')} onPointerMove={moveDrag} onPointerUp={endDrag} onKeyDown={(event) => nudgePosition(event, 'moving')} pending={saving} onThread={() => setSelectedRootId(root.id)} onMove={() => startMove(root)} onConfirmMove={confirmMove} onCancelMove={() => setMoving(null)} onEdit={() => setEditingNote(root)} onDelete={() => deleteNote(root)} />
               })}
-              {draft && <DraftNote draft={draft} dragging={drag?.target === 'draft'} saving={saving} onPointerDown={(event) => beginDrag(event, 'draft')} onPointerMove={moveDrag} onPointerUp={endDrag} onKeyDown={(event) => nudgePosition(event, 'draft')} onConfirm={() => saveRoot()} onCancel={() => setDraft(null)} />}
+              {draft && <DraftNote draft={draft} dragging={drag?.target === 'draft'} blocked={placementBlocked} saving={saving} onPointerDown={(event) => beginDrag(event, 'draft')} onPointerMove={moveDrag} onPointerUp={endDrag} onKeyDown={(event) => nudgePosition(event, 'draft')} onConfirm={() => saveRoot()} onCancel={() => setDraft(null)} />}
             </div>
           </div>
         </div>
@@ -1009,7 +1063,7 @@ function App() {
       {composerOpen && <CreateNoteDialog form={form} setForm={setForm} saving={saving} error={error} onClose={() => setComposerOpen(false)} onChoosePosition={prepareDraft} onAutomatic={() => saveRoot({ automatic: true })} />}
       {selectedRoot && <ThreadDrawer root={selectedRoot} replies={selectedReplies} writable={writable} saving={saving} onClose={() => setSelectedRootId(null)} onReply={createReply} onEdit={(note) => { setSelectedRootId(null); setEditingNote(note) }} onDelete={deleteNote} />}
       {editingNote && <EditDialog note={editingNote} saving={saving} onClose={() => setEditingNote(null)} onSave={saveEdit} />}
-      {toast && <div className="toast" role="status">{toast}</div>}
+      {toast && <div className={`toast toast-${toast.tone}`} role={toast.tone === 'warning' ? 'alert' : 'status'}>{toast.message}</div>}
     </main>
   )
 }
